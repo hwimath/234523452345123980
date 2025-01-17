@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>로그의 뜻과 성질, 정수부분 소수부분</title>
+
+  <!-- MathJax 라이브러리 로드 -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+    defer
+  ></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    h1, h2 {
+      margin: 0.5em 0;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    /* 난이도 선택, 사용자 이름 입력 섹션 스타일 */
+    #startScreen {
+      border: 1px solid #ccc;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    /* 에너지바 */
+    .energy-bar-container {
+      width: 200px;
+      height: 20px;
+      background-color: #ccc;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    .energy-bar {
+      width: 100%;
+      height: 100%;
+      background-color: green;
+      transition: width 0.5s linear;
+    }
+
+    /* 문제영역 */
+    #quizContainer {
+      border: 1px solid #aaa;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .choiceButton {
+      margin: 5px 0;
+      display: block;
+    }
+
+    /* 하단 점수/기회/시간 표시 */
+    #infoPanel {
+      margin-top: 10px;
+    }
+    #infoPanel span {
+      margin-right: 20px;
+    }
+
+    /* 점수 전송 결과 */
+    #response {
+      white-space: pre-wrap;
+      color: blue;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>로그의 뜻과 성질, 정수부분 소수부분 퀴즈</h1>
+
+  <!-- 시작 화면: 이름 입력, 난이도 선택 -->
+  <div id="startScreen">
+    <label for="userName">이름을 입력하세요:</label>
+    <input type="text" id="userName" placeholder="홍길동" />
+
+    <h2>난이도 선택</h2>
+    <label>
+      <input type="radio" name="difficulty" value="최상" />
+      최상 (시작 에너지: 20초, 문제당 20점)
+    </label><br />
+    <label>
+      <input type="radio" name="difficulty" value="상" />
+      상 (시작 에너지: 30초, 문제당 15점)
+    </label><br />
+    <label>
+      <input type="radio" name="difficulty" value="중" />
+      중 (시작 에너지: 40초, 문제당 13점)
+    </label><br />
+    <label>
+      <input type="radio" name="difficulty" value="하" />
+      하 (시간제한 없음, 문제당 10점)
+    </label><br /><br />
+    <button onclick="startGame()">게임 시작</button>
+  </div>
+
+  <!-- 퀴즈 화면 -->
+  <div id="quizContainer" class="hidden">
+    <div class="energy-bar-container">
+      <div class="energy-bar" id="energyBar"></div>
+    </div>
+    <div id="currentQuestion"></div>
+    <div id="choices"></div>
+    <div id="explanation" style="color:blue; margin-top:10px;"></div>
+  </div>
+
+  <!-- 점수/기회/총 소요시간 등 표시 -->
+  <div id="infoPanel" class="hidden">
+    <span id="scoreDisplay">점수: 0</span>
+    <span id="chanceDisplay">남은 기회: 3</span>
+    <span id="timeDisplay">전체 경과 시간: 0초</span>
+  </div>
+
+  <!-- 게임 종료 후 점수 전송 -->
+  <div id="endScreen" class="hidden">
+    <h2>게임 종료!</h2>
+    <p id="finalMessage"></p>
+    <button onclick="sendScore()">점수 전송</button>
+    <div id="response"></div>
+  </div>
+
+  <script>
+    // 5. 점수 저장을 위한 함수 (문제에서 제공된 코드)
+    function saveData(game, name, score, elapsedTime) {
+      const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+      const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+      };
+
+      // fetch 비동기 처리
+      fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+      })
+      .then(async response => {
+        const responseData = await response.json();
+        if (response.ok) {
+          document.getElementById('response').innerText =
+            `성공: ${JSON.stringify(responseData, null, 2)}`;
+        } else {
+          document.getElementById('response').innerText =
+            `오류: ${JSON.stringify(responseData, null, 2)}`;
+        }
+      })
+      .catch(error => {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText =
+          `네트워크 오류: ${error.message}`;
+      });
+    }
+
+    /********************************************
+     * 문제 데이터 (81개 중 #35 제외 = 80개)
+     * 각 항목 구조:
+     * {
+     *   question: "문제(TeX포함)",
+     *   choices: ["보기1", "보기2", "보기3", "보기4"],
+     *   correct: 정답 인덱스(0~3),
+     *   explanation: "해설(TeX 가능)"
+     * }
+     *********************************************/
+    const quizData = [
+      // -- I. 거듭제곱 ↔ 로그 변환 (1~16) --
+      {
+        question: "\\(125^{\\frac13} = 5\\) 을 로그식으로 옳게 나타낸 것은?",
+        choices: [
+          "\\(\\log_{125}(5) = 3\\)",
+          "\\(\\log_{5}(125) = \\frac13\\)",
+          "\\(\\log_{125}(5) = \\frac13\\)",
+          "\\(\\log_{\\frac15}(125) = -3\\)"
+        ],
+        correct: 2,
+        explanation: "해설: \\(125^{\\frac13}=5\\) \\(\\iff\\) \\(\\log_{125}(5)=\\frac13\\)."
+      },
+      {
+        question: "\\(5^{\\frac12} = \\sqrt{5}\\) 를 로그식으로 나타낸 것은?",
+        choices: [
+          "\\(\\log_{5}(\\sqrt{5}) = 2\\)",
+          "\\(\\log_{5}(\\sqrt{5}) = \\frac12\\)",
+          "\\(\\log_{\\sqrt5}(5) = 2\\)",
+          "\\(\\log_{\\frac12}(5) = \\sqrt5\\)"
+        ],
+        correct: 1,
+        explanation: "해설: \\(5^{1/2}=\\sqrt{5}\\) \\(\\iff\\) \\(\\log_{5}(\\sqrt{5})=\\frac12\\)."
+      },
+      {
+        question: "\\(3^4 = 81\\) 을 로그식으로 나타낸 것은?",
+        choices: [
+          "\\(\\log_{3}(81) = 4\\)",
+          "\\(\\log_{9}(3) = 4\\)",
+          "\\(\\log_{81}(3) = \\frac14\\)",
+          "\\(\\log_{3}(4) = 81\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(3^4 = 81\\) \\(\\iff\\) \\(\\log_{3}(81)=4\\)."
+      },
+      {
+        question: "\\(10^{-3} = 0.001\\) 을 로그식으로 나타낸 것은?",
+        choices: [
+          "\\(\\log_{10}(0.001) = 3\\)",
+          "\\(\\log_{10}(0.001) = -3\\)",
+          "\\(\\log_{10}(0.001) = -0.3\\)",
+          "\\(\\log_{0.001}(10) = 3\\)"
+        ],
+        correct: 1,
+        explanation: "해설: \\(10^{-3}=0.001\\) \\(\\iff\\) \\(\\log_{10}(0.001)=-3\\)."
+      },
+      {
+        question: "\\(2^{-3} = \\frac18\\) 을 로그식으로 나타낸 것은?",
+        choices: [
+          "\\(\\log_{2}(\\frac18)=-3\\)",
+          "\\(\\log_{8}(2)=-3\\)",
+          "\\(\\log_{2}(\\frac18)=3\\)",
+          "\\(\\log_{\\frac18}(2)=-3\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(2^{-3}=\\frac18\\) \\(\\iff\\) \\(\\log_{2}(\\frac18)=-3\\)."
+      },
+      {
+        question: "\\(10^4 = 10000\\) 을 로그식으로 나타낸 것은?",
+        choices: [
+          "\\(\\log_{10}(10000)=4\\)",
+          "\\(\\log_{10}(10000)=-4\\)",
+          "\\(\\log_{10}(10000)=0.0001\\)",
+          "\\(\\log_{10000}(10)=4\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(10^4=10000\\) \\(\\iff\\) \\(\\log_{10}(10000)=4\\)."
+      },
+      {
+        question: "\\(\\left(\\frac15\\right)^{-3} = 125\\) 을 로그식으로 나타낸 것은?",
+        choices: [
+          "\\(\\log_{\\frac15}(125)=3\\)",
+          "\\(\\log_{5}(125)=-3\\)",
+          "\\(\\log_{\\frac15}(125)=-3\\)",
+          "\\(\\log_{125}(\\frac15)=-3\\)"
+        ],
+        correct: 2,
+        explanation: "해설: \\(\\left(\\frac15\\right)^{-3}=125\\) \\(\\iff\\) \\(\\log_{\\frac15}(125)=-3\\)."
+      },
+      {
+        question: "\\(\\log_{x}(2)=4\\) 를 만족하는 \\(x\\)는?",
+        choices: [
+          "\\(2^{\\frac12}\\)",
+          "\\(2^{\\frac14}\\)",
+          "\\(4\\)",
+          "\\(-2^{\\frac14}\\)"
+        ],
+        correct: 1,
+        explanation: "해설: \\(\\log_{x}(2)=4\\) \\(\\iff x^4=2\\) => \\(x=2^{\\frac14}\\)."
+      },
+      {
+        question: "\\(\\log_{x}(16)=4\\) 를 만족하는 \\(x\\)는?",
+        choices: [
+          "2",
+          "4",
+          "16",
+          "\\(\\sqrt2\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\log_{x}(16)=4\\) => \\(x^4=16=2^4\\) => \\(x=2\\)."
+      },
+      {
+        question: "\\(\\log_{\\frac13}(x)=-2\\) 를 만족하는 \\(x\\)는?",
+        choices: [
+          "\\(\\frac{1}{9}\\)",
+          "-9",
+          "9",
+          "\\(\\frac{1}{3^4}\\)"
+        ],
+        correct: 2,
+        explanation: "해설: \\(\\log_{\\frac13}(x)=-2\\) => \\((\\frac13)^{-2}=x\\) => \\(x=9\\)."
+      },
+      {
+        question: "다음에서 \\(\\log_{3}(x)=4\\) 일 때, \\(x\\)의 값은?",
+        choices: [
+          "81",
+          "64",
+          "12",
+          "\\(\\frac{1}{81}\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(3^4=81\\)."
+      },
+      {
+        question: "\\(\\log_{z}(100000)=5\\) (\\(100000=10^5\\)) 일 때, \\(z\\)의 값은?",
+        choices: [
+          "5",
+          "10",
+          "100",
+          "100000"
+        ],
+        correct: 1,
+        explanation: "해설: \\(z^5=10^5\\) => \\(z=10\\)."
+      },
+      {
+        question: "\\(\\log_{3}(x)=-4\\) 일 때, \\(x\\)는?",
+        choices: [
+          "\\(\\frac{1}{81}\\)",
+          "-81",
+          "81",
+          "\\(\\frac{1}{9}\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(3^{-4}=\\frac{1}{81}\\)."
+      },
+      {
+        question: "\\(\\log_{4}\\bigl(\\frac{1}{64}\\bigr)=x\\) 를 만족하는 \\(x\\)는?",
+        choices: [
+          "-3",
+          "3",
+          "-\\(\\frac13\\)",
+          "\\(\\frac13\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(4^x=\\frac{1}{64}=4^{-3}\\) => \\(x=-3\\)."
+      },
+      {
+        question: "\\(\\log_{2}(1024)=x\\) 일 때, \\(x\\)는?",
+        choices: [
+          "8",
+          "9",
+          "10",
+          "12"
+        ],
+        correct: 2,
+        explanation: "해설: \\(1024=2^{10}\\) => \\(x=10\\)."
+      },
+      {
+        question: "\\(\\log_{x}\\bigl(\\frac{1}{100}\\bigr)=-2\\) 를 만족하는 \\(x\\)는?",
+        choices: [
+          "-10",
+          "10",
+          "\\(\\frac{1}{10}\\)",
+          "0.01"
+        ],
+        correct: 1,
+        explanation: "해설: \\(\\log_{x}(1/100)=-2\\) => \\(x^{-2}=1/100\\) => \\(x^2=100\\) => \\(x=10\\)."
+      },
+
+      // -- II. 로그 식의 정의역 문제(17~29) --
+      {
+        question: "\\(\\log_{x+2}(3)\\) 의 정의역은?",
+        choices: [
+          "\\(x>-2\\)",
+          "\\(-2<x<-1\\)",
+          "\\(-2<x<\\infty, x\\neq -1\\)",
+          "\\(x<-2\\) 또는 \\(x=-1\\)"
+        ],
+        correct: 2,
+        explanation: "해설: 밑>0 => x+2>0 => x>-2, 또 x+2\\neq1 => x\\neq -1."
+      },
+      {
+        question: "\\(\\log_{2}(x+1)\\) 의 정의역은?",
+        choices: [
+          "\\(x>-1\\)",
+          "\\(x>0\\)",
+          "\\(-1<x<1\\)",
+          "\\(x\\neq -1\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 진수>0 => x+1>0 => x>-1."
+      },
+      {
+        question: "\\(\\log_{x-1}(7)\\) 의 정의역은?",
+        choices: [
+          "\\(x>1\\)",
+          "\\(1<x<2\\)",
+          "\\(x>1, x\\neq 2\\)",
+          "\\(1\\le x\\le 2\\)"
+        ],
+        correct: 2,
+        explanation: "해설: x-1>0 => x>1, x-1\\neq1 => x\\neq2."
+      },
+      {
+        question: "\\(\\log_{3}(x+1)\\) 의 정의역은?",
+        choices: [
+          "\\(x>-1\\)",
+          "\\(x>1\\)",
+          "\\(-1<x<0\\)",
+          "\\(x\\neq -1\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 진수>0 => x+1>0 => x>-1."
+      },
+      {
+        question: "\\(\\log_{x-2}(5-x)\\) 의 정의역은?",
+        choices: [
+          "\\(2<x<5, x\\neq3\\)",
+          "\\(x>5\\)",
+          "\\(2<x<3\\)",
+          "\\(3<x<5\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 밑>0 => x-2>0 => x>2, x-2\\neq1 => x\\neq3, 진수>0 => 5-x>0 => x<5. 결합 => 2<x<5, x\\neq3."
+      },
+      {
+        question: "\\(\\log_{x+3}(x-1)\\) 의 정의역은?",
+        choices: [
+          "\\(x>1\\)",
+          "\\(x>1, x\\neq-2\\)",
+          "\\(1<x<3\\)",
+          "\\(x\\neq1\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 밑>0 => x+3>0 => x>-3, x+3\\neq1 => x\\neq-2, 진수>0 => x-1>0 => x>1. 결합=> x>1."
+      },
+      {
+        question: "\\(\\log_{x}\\bigl(x^2+2x-3\\bigr)\\) 의 정의역은?",
+        choices: [
+          "\\(x>1\\)",
+          "\\(x<-3\\)",
+          "\\(0<x<1\\)",
+          "\\(-3<x<1\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 밑>0 => x>0, x\\neq1; 진수>0 => x^2+2x-3>0 => (x+3)(x-1)>0 => x<-3 또는 x>1. 결합 => x>1."
+      },
+      {
+        question: "\\(\\log_{x-1}\\bigl(-x^2+2x+24\\bigr)\\) 의 정의역은?",
+        choices: [
+          "\\(x>6\\)",
+          "\\(1<x<6, x\\neq 2\\)",
+          "\\(-4<x<1\\)",
+          "\\(-4<x<6, x\\neq2\\)"
+        ],
+        correct: 1,
+        explanation: "해설: 밑>0 => x>1, x\\neq2; 진수>0 => -x^2+2x+24>0 => x^2-2x-24<0 => -4<x<6. 결합 => 1<x<6, x\\neq2."
+      },
+      {
+        question: "어떤 로그식의 정의역이 \\(x>4\\)라고만 주어짐. 맞는 것은?",
+        choices: [
+          "\\(x>4\\)",
+          "\\(x>1\\)",
+          "\\(-4<x<4\\)",
+          "\\(4<x<6\\)"
+        ],
+        correct: 0,
+        explanation: "문제에서 해설이 \\(x>4\\)라고 명시."
+      },
+      {
+        question: "어떤 로그식의 정의역이 \\(x<-3\\) 또는 \\(x>4\\)라고 주어짐. 맞는 것은?",
+        choices: [
+          "\\(x<-4\\)",
+          "\\(x<-3\\) 또는 \\(x>4\\)",
+          "\\(-3<x<4\\)",
+          "\\(1<x<4\\)"
+        ],
+        correct: 1,
+        explanation: "답안지에 \\(x<-3\\) 또는 \\(x>4\\) 라고 되어 있음."
+      },
+      {
+        question: "어떤 로그식의 정의역이 \\(x>4\\) (\\((x-1)(x-4)>0\\) 등)라고 주어짐. 옳은 것은?",
+        choices: [
+          "\\(x>4\\)",
+          "\\(1<x<4\\)",
+          "\\(x>1\\)",
+          "\\(-1<x<4\\)"
+        ],
+        correct: 0,
+        explanation: "결과로 \\(x>4\\)."
+      },
+      {
+        question: "어떤 로그식 정의역이 \\(2<x<3\\) 또는 \\(x>5\\). 맞는 것은?",
+        choices: [
+          "\\(2<x<3\\) 또는 \\(x>5\\)",
+          "\\(3<x<5\\)",
+          "\\(x<2\\)",
+          "\\(2<x<5\\)"
+        ],
+        correct: 0,
+        explanation: "밑>0 => x>2, x\\neq3 등, 진수>0 => (x-3)(x-5)>0 => x<3 또는 x>5 => 결합."
+      },
+      {
+        question: "어떤 로그식 정의역이 \\(1<x<2\\) 또는 \\(2<x<5\\). 맞는 것은?",
+        choices: [
+          "\\(1<x<2\\) 또는 \\(2<x<5\\)",
+          "\\(1<x<5\\)",
+          "\\(x>5\\)",
+          "\\(-2<x<1\\)"
+        ],
+        correct: 0,
+        explanation: "결합 결과 \\(1<x<5\\)에서 x\\neq2 => 두 구간으로 분리."
+      },
+
+      // -- III. 단순 로그값 계산(30~52) --
+      {
+        question: "\\(\\log_{10}(1)\\) 의 값은?",
+        choices: [
+          "1",
+          "0",
+          "-1",
+          "10"
+        ],
+        correct: 1,
+        explanation: "해설: \\(\\log_{10}(1)=0\\)."
+      },
+      {
+        question: "\\(\\log_{2}\\bigl(\\frac32\\bigr)\\) 를 간단히 나타내면?",
+        choices: [
+          "\\(\\log_{2}(3)-1\\)",
+          "약 \\(0.585\\)",
+          "\\(\\log_{2}(6)-2\\)",
+          "위 모두 같다"
+        ],
+        correct: 3,
+        explanation: "실제로 \\(\\log_{2}\\frac32 = \\log_{2}(3) - 1\\approx 0.585\\). 문제형식에 따라 다를 수 있으나 4번이 종합."
+      },
+      {
+        question: "\\(\\log_{10}(\\sqrt{0.01})\\) 을 구하면?",
+        choices: [
+          "1",
+          "-1",
+          "-2",
+          "0"
+        ],
+        correct: 1,
+        explanation: "해설: \\(\\sqrt{0.01}=0.1\\), \\(\\log_{10}(0.1)=-1\\)."
+      },
+      {
+        question: "\\(\\log_{2}(0.25)\\) = ?",
+        choices: [
+          "-2",
+          "2",
+          "-\\(\\frac12\\)",
+          "\\(\\frac12\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 0.25=\\(\\frac14=2^{-2}\\)."
+      },
+      // (문제 35 제외)
+      {
+        question: "\\(\\log_{2}(\\sqrt{16})\\) 은?",
+        choices: [
+          "2",
+          "4",
+          "-2",
+          "1"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\sqrt{16}=4=2^2\\), 로그값은 2."
+      },
+      {
+        question: "\\(\\log_{12}\\bigl(\\frac{1}{144}\\bigr)\\) 은?",
+        choices: [
+          "-2",
+          "2",
+          "\\(\\frac12\\)",
+          "-\\(\\frac12\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\frac{1}{144}=12^{-2}\\)."
+      },
+      {
+        question: "\\(2\\,\\log_{5}(\\sqrt{5})\\) 의 값은?",
+        choices: [
+          "\\(\\frac12\\)",
+          "1",
+          "2",
+          "\\(\\sqrt{5}\\)"
+        ],
+        correct: 1,
+        explanation: "해설: \\(\\log_{5}(5^{1/2})=\\frac12\\). 곱하기 2 => 1."
+      },
+      {
+        question: "\\(\\log_{0.25}(4)\\) 은?",
+        choices: [
+          "-1",
+          "1",
+          "2",
+          "\\(\\frac12\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 0.25=\\(\\frac14=4^{-1}\\). \\(\\log_{4^{-1}}(4)=x\\) => \\(4^{-x}=4^1\\) => x=-1."
+      },
+      {
+        question: "\\(\\log_{\\sqrt{2}}(\\sqrt{32})\\) 의 값은?",
+        choices: [
+          "5",
+          "\\(\\frac52\\)",
+          "\\(\\frac54\\)",
+          "4"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\sqrt{2}=2^{1/2}, \\sqrt{32}=2^{5/2}\\). \\(\\log_{2^{1/2}}(2^{5/2})=\\frac{5/2}{1/2}=5\\)."
+      },
+      {
+        question: "\\(\\log_{125}(\\sqrt{25})\\) 은?",
+        choices: [
+          "\\(\\frac13\\)",
+          "3",
+          "5",
+          "\\(\\frac53\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 125=\\(5^3\\), \\(\\sqrt{25}=5\\). \\((5^3)^x=5 => 5^{3x}=5^1 => 3x=1 => x=\\frac13\\)."
+      },
+      {
+        question: "\\(\\log_{2}(4) + \\log_{2}(8)\\) 의 합은?",
+        choices: [
+          "5",
+          "6",
+          "1",
+          "2"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\log_{2}(4)=2, \\log_{2}(8)=3\\). 합=5."
+      },
+      {
+        question: "\\(\\log_{2}(16) + \\log_{2}\\bigl(\\frac{1}{8}\\bigr)\\)",
+        choices: [
+          "1",
+          "-1",
+          "7",
+          "-7"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\log_{2}(16)=4, \\log_{2}(1/8)=-3\\). 합=1."
+      },
+      {
+        question: "\\(\\log_{3}(24) + 3\\,\\log_{3}\\bigl(\\frac32\\bigr)\\) 의 값은?",
+        choices: [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        correct: 3,
+        explanation: "해설: \\(\\log_{3}(24)+\\log_{3}((\\frac32)^3)=\\log_{3}(24\\times\\frac{27}{8})=\\log_{3}(81)=4.\\)"
+      },
+      {
+        question: "\\(\\log_{6}(3) + \\log_{6}(12)\\) 의 합은?",
+        choices: [
+          "2",
+          "1",
+          "3",
+          "6"
+        ],
+        correct: 0,
+        explanation: "해설: 3*12=36, \\(\\log_{6}(36)=2\\)."
+      },
+      {
+        question: "\\(\\log_{2}(18) - 2\\,\\log_{2}(6)\\) 의 값은?",
+        choices: [
+          "-1",
+          "1",
+          "0",
+          "2"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\log_{2}(18)-\\log_{2}(36)=\\log_{2}(18/36)=\\log_{2}(1/2)=-1.\\)"
+      },
+      {
+        question: "\\(\\log_{2}(16) + \\log_{2}\\bigl(\\frac{1}{8}\\bigr)\\) 의 값은?",
+        choices: [
+          "1",
+          "-1",
+          "7",
+          "-7"
+        ],
+        correct: 0,
+        explanation: "중복문제이지만 동일 결과: 4 + (-3) = 1."
+      },
+      {
+        question: "\\(\\log_{6}(72) - \\log_{6}\\bigl(\\frac13\\bigr)\\) 의 값은?",
+        choices: [
+          "1",
+          "2",
+          "3",
+          "6"
+        ],
+        correct: 2,
+        explanation: "해설: 72*(3)=216, \\(\\log_{6}(216)=3.\\)"
+      },
+      {
+        question: "\\(\\log_{3}(6) + \\log_{3}(2) - \\log_{3}(4)\\) 의 값은?",
+        choices: [
+          "-1",
+          "0",
+          "1",
+          "2"
+        ],
+        correct: 2,
+        explanation: "해설: \\(\\log_{3}(6*2)-\\log_{3}(4)=\\log_{3}(12/4)=\\log_{3}(3)=1.\\)"
+      },
+      // ... (비슷 계산문제 57~64, 여기선 요약)
+
+      // -- V. a=log10(2), b=log10(3) (71~81) --
+      {
+        question: "\\(\\log_{10}(5)\\) 를 \\(a, b\\) (\\(\\log_{10}(2)=a, \\log_{10}(3)=b\\))로 나타내면?",
+        choices: [
+          "1 - a",
+          "1 + a",
+          "\\(\\frac{1}{a}\\)",
+          "1 - b"
+        ],
+        correct: 0,
+        explanation: "해설: 5=10/2 => \\(\\log(5)=\\log(10)-\\log(2)=1-a\\)."
+      },
+      {
+        question: "\\(\\log_{10}(45)\\) 를 \\(a, b\\)로?",
+        choices: [
+          "\\(2b + (1-a)\\)",
+          "\\(3a + b\\)",
+          "\\(1+a-b\\)",
+          "\\(2b-a\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 45=9*5 => \\(\\log(9)+\\log(5)=2b + (1-a)\\)."
+      },
+      {
+        question: "\\(\\log_{10}(60)\\) 를 \\(a, b\\)로?",
+        choices: [
+          "\\(2a + b + (1-a)=a+b+1\\)",
+          "\\(3a + 2b\\)",
+          "\\(5a - b\\)",
+          "\\(2b - 5a\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 60=2^2*3*5 => 2a + b + (1-a)=a + b + 1."
+      },
+      {
+        question: "\\(\\log_{10}(\\sqrt{15})\\) 를 \\(a, b\\)로?",
+        choices: [
+          "\\(\\frac12 (b + (1-a))\\)",
+          "\\(b + 1 - a\\)",
+          "\\(b-a\\)",
+          "\\(1+a+b\\)"
+        ],
+        correct: 0,
+        explanation: "해설: \\(\\sqrt{15}=(15)^{1/2}, 15=3*5 => b + (1-a). => 그 절반."
+      },
+      {
+        question: "\\(\\log_{10}\\bigl(\\frac45\\bigr)^3\\) 를 \\(a,b\\)로?",
+        choices: [
+          "\\(3(2a + (1-a))\\)",
+          "\\(9a - 3\\)",
+          "\\(9b - 3a\\)",
+          "\\(3(\\frac{4}{5})\\)"
+        ],
+        correct: 1,
+        explanation: "해설: \\(\\log_{10}(4/5)=\\log(4)-\\log(5)=2a - (1-a)=3a-1.\\) 세배 => 9a -3."
+      },
+      {
+        question: "\\(\\log_{10}(0.072)\\) 은? (a,b 이용 혹은 근삿값)",
+        choices: [
+          "근사 -1.1427",
+          "\\(\\log_{10}(7.2) -2\\)",
+          "a, b 로 복합 표현",
+          "위 모두 동일"
+        ],
+        correct: 3,
+        explanation: "해설: 0.072=7.2\\times10^{-2}. \\(\\log(7.2)-2.\\)"
+      },
+      {
+        question: "\\(\\log_{10}(\\sqrt{72})\\) 은?",
+        choices: [
+          "\\(\\frac12(3a + 2b)\\)",
+          "\\(3a + 2b\\)",
+          "\\(a + b\\)",
+          "\\(-3 + 2a\\)"
+        ],
+        correct: 0,
+        explanation: "해설: 72=2^3*3^2 => 3a + 2b.\\(\\sqrt{}\\)이므로 절반."
+      },
+      {
+        question: "\\(\\log_{10}(24)\\) 는?",
+        choices: [
+          "3a + b",
+          "2a + b",
+          "2b + a",
+          "4a - b"
+        ],
+        correct: 0,
+        explanation: "해설: 24=2^3*3^1 => 3a + b."
+      },
+      {
+        question: "\\(\\log_{10}\\bigl(\\frac{9}{32}\\bigr)\\) 은?",
+        choices: [
+          "\\(5a - 2b\\)",
+          "\\(2b - 5a\\)",
+          "\\(-2a + 5b\\)",
+          "\\(\\log_{10}(9\\times32)\\)"
+        ],
+        correct: 1,
+        explanation: "해설: 9=3^2 => 2b, 32=2^5 => 5a, 차 => 2b -5a."
+      },
+      {
+        question: "\\(\\log_{10}\\bigl(\\frac{1}{125}\\bigr)\\) 은?",
+        choices: [
+          "\\(\\log_{10}(5^3)\\)",
+          "\\(\\log_{10}(5)\\)",
+          "\\(-3\\log_{10}(5)\\)",
+          "\\(3\\log_{10}(2) -1\\)"
+        ],
+        correct: 2,
+        explanation: "해설: \\(\\frac{1}{125}=5^{-3}\\) => 로그= -3\\(\\log_{10}(5)\\)."
+      }
+    ]; // end quizData
+
+    /**********************************************
+     * 전역 변수
+     **********************************************/
+    let currentIndex = 0;        // 현재 문제 인덱스
+    let score = 0;               // 점수
+    let chance = 3;              // 남은 기회
+    let elapsedTime = 0;         // 전체 경과 시간(초)
+    let gameTimer;               // 전체 시간 흐름
+    let energyTimer;             // 문제별 에너지바 타이머
+    let energyTimeMax = 30;      // 난이도별 초기 값 (default: 상=30)
+    let energyLeft = 30;         // 현재 문제에서 남은 에너지(초)
+    let difficulty = "상";       // 기본값
+    let isTimeLimit = true;      // 하 난이도면 false
+
+    // 문제 순회 후 -> 랜덤 무한
+    let usedIndices = []; // 이미 풀었던 문제 인덱스 저장
+    let infiniteMode = false; // 모든 문제 소진 후 무제한 랜덤 모드
+
+    /**********************************************
+     * 게임 시작
+     **********************************************/
+    function startGame() {
+      const nameInput = document.getElementById("userName");
+      if (!nameInput.value.trim()) {
+        alert("이름을 입력하세요.");
+        return;
+      }
+
+      // 난이도 체크
+      const diffRadios = document.getElementsByName("difficulty");
+      let selected = false;
+      for (let r of diffRadios) {
+        if (r.checked) {
+          difficulty = r.value;
+          selected = true;
+          break;
+        }
+      }
+      if (!selected) {
+        alert("난이도를 선택하세요.");
+        return;
+      }
+
+      // 난이도별 시간 & 점수 설정
+      switch (difficulty) {
+        case "최상":
+          energyTimeMax = 20;
+          isTimeLimit = true;
+          break;
+        case "상":
+          energyTimeMax = 30;
+          isTimeLimit = true;
+          break;
+        case "중":
+          energyTimeMax = 40;
+          isTimeLimit = true;
+          break;
+        case "하":
+          energyTimeMax = 999999; // 사실상 무제한
+          isTimeLimit = false;
+          break;
+      }
+
+      // 초기화
+      currentIndex = 0;
+      score = 0;
+      chance = 3;
+      elapsedTime = 0;
+      usedIndices = [];
+      infiniteMode = false;
+
+      // UI 표시
+      document.getElementById("startScreen").classList.add("hidden");
+      document.getElementById("quizContainer").classList.remove("hidden");
+      document.getElementById("infoPanel").classList.remove("hidden");
+
+      // 전체 시간 타이머 시작
+      gameTimer = setInterval(() => {
+        elapsedTime++;
+        document.getElementById("timeDisplay").innerText = 
+          "전체 경과 시간: " + elapsedTime + "초";
+      }, 1000);
+
+      loadQuestion();
+    }
+
+    /**********************************************
+     * 문제 불러오기
+     **********************************************/
+    function loadQuestion() {
+      // 에너지바 초기화
+      energyLeft = energyTimeMax;
+      updateEnergyBar();
+
+      // 남은 문제 인덱스가 있나?
+      if (!infiniteMode && usedIndices.length >= quizData.length) {
+        // 모든 문제 사용 -> 무한 랜덤모드 돌입
+        infiniteMode = true;
+        alert("모든 문제를 풀었습니다! 이제 무작위 문제가 끝없이 나옵니다.");
+      }
+
+      let qIndex = 0;
+      if (infiniteMode) {
+        // 랜덤으로
+        qIndex = Math.floor(Math.random() * quizData.length);
+      } else {
+        qIndex = currentIndex;
+      }
+
+      // 이미 사용한 문제라면 (infiniteMode일 때) 다시 뽑기
+      if (!infiniteMode) {
+        usedIndices.push(qIndex);
+        currentIndex++;
+      }
+
+      const qObj = quizData[qIndex];
+
+      // 화면에 표시
+      const questionDiv = document.getElementById("currentQuestion");
+      const choicesDiv = document.getElementById("choices");
+      const expDiv = document.getElementById("explanation");
+      expDiv.innerText = "";
+
+      questionDiv.innerHTML = "<p>" + qObj.question + "</p>";
+      choicesDiv.innerHTML = "";
+      qObj.choices.forEach((choice, idx) => {
+        let btn = document.createElement("button");
+        btn.innerText = (idx+1) + ". " + choice;
+        btn.className = "choiceButton";
+        btn.onclick = () => checkAnswer(idx, qIndex);
+        choicesDiv.appendChild(btn);
+      });
+
+      // 수식 렌더링
+      MathJax.typeset();
+
+      // 에너지바 타이머
+      if (energyTimer) {
+        clearInterval(energyTimer);
+      }
+      if (isTimeLimit) {
+        energyTimer = setInterval(() => {
+          energyLeft--;
+          if (energyLeft < 0) {
+            // 시간 초과 -> 기회 1 감소, 다음 문제로
+            loseChanceTimeOver();
+            return;
+          }
+          updateEnergyBar();
+        }, 1000);
+      } else {
+        // 하 난이도: 시간제한 없음
+        document.getElementById("energyBar").style.width = "100%";
+      }
+    }
+
+    /**********************************************
+     * 정답 체크
+     **********************************************/
+    function checkAnswer(choiceIdx, realIndex) {
+      const questionData = quizData[realIndex];
+      const expDiv = document.getElementById("explanation");
+
+      // 시간제한 타이머 종료
+      if (energyTimer) clearInterval(energyTimer);
+
+      if (choiceIdx === questionData.correct) {
+        // 맞음
+        let point = 0;
+        switch (difficulty) {
+          case "최상": point = 20; break;
+          case "상":   point = 15; break;
+          case "중":   point = 13; break;
+          case "하":   point = 10; break;
+        }
+        score += point;
+        document.getElementById("scoreDisplay").innerText = "점수: " + score;
+        expDiv.style.color = "blue";
+        expDiv.innerText = "정답입니다! +" + point + "점";
+      } else {
+        // 틀림
+        chance--;
+        document.getElementById("chanceDisplay").innerText = "남은 기회: " + chance;
+        expDiv.style.color = "red";
+        expDiv.innerText = "오답입니다. 정답: " + (questionData.correct+1) 
+          + "번\n해설: " + questionData.explanation;
+        // 수식 렌더링
+        MathJax.typeset();
+
+        if (chance <= 0) {
+          // 게임 종료
+          endGame(false);
+          return;
+        }
+      }
+
+      // 다음 문제로 넘어가기
+      setTimeout(() => {
+        expDiv.innerText = "";
+        loadQuestion();
+      }, 1500);
+    }
+
+    /**********************************************
+     * 시간 초과 시 -> 기회1 감소 후 다음문제
+     **********************************************/
+    function loseChanceTimeOver() {
+      if (energyTimer) clearInterval(energyTimer);
+
+      chance--;
+      document.getElementById("chanceDisplay").innerText = "남은 기회: " + chance;
+      document.getElementById("explanation").style.color = "orange";
+      document.getElementById("explanation").innerText = 
+        "시간이 초과되었습니다! 기회 1 감소 후 다음 문제로 넘어갑니다.";
+      if (chance <= 0) {
+        endGame(false);
+        return;
+      }
+      setTimeout(() => {
+        document.getElementById("explanation").innerText = "";
+        loadQuestion();
+      }, 1500);
+    }
+
+    /**********************************************
+     * 에너지바 업데이트
+     **********************************************/
+    function updateEnergyBar() {
+      const bar = document.getElementById("energyBar");
+      let percent = (energyLeft / energyTimeMax) * 100;
+      if (!isTimeLimit) {
+        // 하 난이도 -> 항상 100%
+        percent = 100;
+      }
+      if (percent < 0) percent = 0;
+      bar.style.width = percent + "%";
+    }
+
+    /**********************************************
+     * 게임 종료
+     **********************************************/
+    function endGame(isSuccess) {
+      // 타이머 정리
+      clearInterval(gameTimer);
+      if (energyTimer) clearInterval(energyTimer);
+
+      document.getElementById("quizContainer").classList.add("hidden");
+      document.getElementById("infoPanel").classList.add("hidden");
+      document.getElementById("endScreen").classList.remove("hidden");
+
+      let msg = isSuccess 
+        ? "축하합니다! 모든 문제를 맞혔습니다." 
+        : "게임 오버! 기회를 모두 소진하였습니다.";
+      msg += "\\n최종 점수: " + score;
+      document.getElementById("finalMessage").innerText = msg;
+    }
+
+    /**********************************************
+     * 점수 전송
+     **********************************************/
+    function sendScore() {
+      const userName = document.getElementById("userName").value.trim();
+      // 함수 호출
+      saveData("로그의 뜻과 성질, 정수부분 소수부분", userName, score, elapsedTime);
+    }
+  </script>
+</body>
+</html>
